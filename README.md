@@ -49,12 +49,4 @@ Before using the SAM Annotation GUI, ensure that the "Segment Anything" model is
   - Press the `w` key to return to point selection mode. The model will predict based on this mask the next time.
 
 - **Iterative optimization of selected points**:
-  - Right-click on the areas you don't need and left-click on the areas you need but are not covered by the mask. A few points are enough. 
-
-## Features Under Development
-
-Ongoing work on output masks: I am working on enhancing the export format of annotated masks to handle lightweight sparse formats efficiently. This will optimize storage and processing requirements while maintaining annotation accuracy.
-
-## License
-
-This project is licensed under the MIT License.
+  - Right-click on the areas you don't need and left-click on the areas you need but are not covered by the mask. A few points are enough.
