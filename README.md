@@ -30,15 +30,14 @@ Before using the SAM Annotation GUI, ensure that the "Segment Anything" model is
    pip install -r requirements.txt
     ```
 
-## Usage:
+## Usage
 
 1. **Prepare Images**: Place the images you want to annotate in the `input/` folder within the project directory. 
 2. **Run the GUI**: In the venv, execute `python sam_GUI.py` to launch the GUI.
 3. **Annotate**: Utilize the annotation tools provided to annotate images efficiently.
 4. **Save Annotations**: Save the annotated images masks for further analysis or model training in the `output/` folder.
 
-
-### Commands:
+### Commands
 
 - **Saving Segmentation Result**:
   - Press the `s` key to save the segmentation result (if a mask has been generated).
@@ -51,3 +50,11 @@ Before using the SAM Annotation GUI, ensure that the "Segment Anything" model is
 
 - **Iterative optimization of selected points**:
   - Right-click on the areas you don't need and left-click on the areas you need but are not covered by the mask. A few points are enough. 
+
+## Features Under Development
+
+Ongoing work on output masks: I am working on enhancing the export format of annotated masks to handle lightweight sparse formats efficiently. This will optimize storage and processing requirements while maintaining annotation accuracy.
+
+## License
+
+This project is licensed under the MIT License.
