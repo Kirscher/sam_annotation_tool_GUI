@@ -1,14 +1,16 @@
 import cv2
 import os
+import json
 import time
 import torch
 import numpy as np
+
+from pycocotools import mask as mask_utils
 from segment_anything import sam_model_registry, SamPredictor
 
 # Constants
 INPUT_DIR = "input"
 OUTPUT_DIR = "output"
-CROP_MODE = True
 IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg"]
 POINT_RADIUS = 3
 
@@ -130,43 +132,29 @@ def get_next_filename(base_path: str, filename: str) -> str:
         i += 1
 
 
-def save_masked_image(image, mask, output_dir, filename, crop_mode):
+def save_mask(mask, output_dir, filename):
     """
-    Save the masked image to the specified output directory.
+    Save the mask in COCO RLE format as a JSON file in the specified output directory.
 
     Args:
         image (numpy.ndarray): The original image.
         mask (numpy.ndarray): The mask to be applied to the image.
         output_dir (str): The directory where the masked image will be saved.
         filename (str): The original filename of the image.
-        crop_mode (bool): Flag indicating whether to crop the image based on the mask.
 
     Returns:
         None
     """
-    if crop_mode:
-        y, x = np.where(mask)
-        y_min, y_max, x_min, x_max = y.min(), y.max(), x.min(), x.max()
-        cropped_mask = mask[y_min : y_max + 1, x_min : x_max + 1]
-        cropped_image = image[y_min : y_max + 1, x_min : x_max + 1]
-        masked_image = apply_mask(cropped_image, cropped_mask)
-    else:
-        masked_image = apply_mask(image, mask)
-    filename = filename[: filename.rfind(".")] + ".png"
-    new_filename = get_next_filename(output_dir, filename)
+    # Encode the mask in COCO RLE format
+    rle = mask_utils.encode(np.asfortranarray(mask))
+    # Convert the RLE mask to a string
+    rle["counts"] = rle["counts"].decode("utf-8")
 
-    if new_filename:
-        if masked_image.shape[-1] == 4:
-            cv2.imwrite(
-                os.path.join(output_dir, new_filename),
-                masked_image,
-                [cv2.IMWRITE_PNG_COMPRESSION, 9],
-            )
-        else:
-            cv2.imwrite(os.path.join(output_dir, new_filename), masked_image)
-        print(f"Saved as {new_filename}")
-    else:
-        print("Could not save the image. Too many variations exist.")
+    # Save the RLE mask to a JSON file
+    with open(os.path.join(output_dir, filename.rsplit(".", 1)[0] + ".json"), "w") as f:
+        json.dump(rle, f)
+
+    print(f"Saved as {filename.rsplit('.', 1)[0]}.json")
 
 
 current_index = 0
@@ -179,7 +167,6 @@ input_stop = False
 while True:
     filename = image_files[current_index]
     image_orign = cv2.imread(os.path.join(INPUT_DIR, filename))
-    image_crop = image_orign.copy()
     image = cv2.cvtColor(image_orign.copy(), cv2.COLOR_BGR2RGB)
     selected_mask = None
     logit_input = None
@@ -262,12 +249,10 @@ while True:
                         input_point.pop(-1)
                         input_label.pop(-1)
                     elif key == ord("s"):  # save mask
-                        save_masked_image(
-                            image_crop,
+                        save_mask(
                             selected_mask,
                             OUTPUT_DIR,
                             filename,
-                            crop_mode=CROP_MODE,
                         )
                     elif key == ord("a"):  # prev mask
                         if mask_idx > 0:
@@ -306,9 +291,7 @@ while True:
             input_point.pop(-1)
             input_label.pop(-1)
         elif key == ord("s") and selected_mask is not None:  # save mask
-            save_masked_image(
-                image_crop, selected_mask, OUTPUT_DIR, filename, crop_mode=CROP_MODE
-            )
+            save_mask(selected_mask, OUTPUT_DIR, filename)
 
     if key == 27:  # ESC
         break
