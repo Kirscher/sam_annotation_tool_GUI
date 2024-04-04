@@ -12,7 +12,17 @@ from segment_anything import sam_model_registry, SamPredictor
 INPUT_DIR = "input"
 OUTPUT_DIR = "output"
 IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg"]
+EMBEDDING_EXTENSIONS = [".pt"]
 POINT_RADIUS = 3
+
+
+def get_embedding_files(directory):
+    """Return a list of embedding filenames in the given directory."""
+    return [
+        f
+        for f in os.listdir(directory)
+        if f.lower().endswith(tuple(EMBEDDING_EXTENSIONS))
+    ]
 
 
 def get_image_files(directory):
@@ -27,6 +37,9 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # Get the list of image files in the input directory
 image_files = get_image_files(INPUT_DIR)
+
+# Get the list of embedding files in the input directory
+embedding_files = get_embedding_files(INPUT_DIR)
 
 # Load the model
 print("Loading model...")
@@ -168,10 +181,15 @@ while True:
     filename = image_files[current_index]
     image_orign = cv2.imread(os.path.join(INPUT_DIR, filename))
     image = cv2.cvtColor(image_orign.copy(), cv2.COLOR_BGR2RGB)
+    embedding_filename = filename.rsplit(".", 1)[0] + ".pt"
+    if embedding_filename in embedding_files:
+        embedding_path = os.path.join(INPUT_DIR, embedding_filename)
+    else:
+        print(f"No embedding found for {filename}, skipping...")
+        continue
     selected_mask = None
     logit_input = None
     while True:
-        # print(input_point)
         input_stop = False
         image_display = image_orign.copy()
         display_info = f"{filename} | s: save | w: predict | d: next image | a: prev. image | space: clear | q: remove last point"
@@ -206,7 +224,7 @@ while True:
             if len(input_point) > 0 and len(input_label) > 0:
 
                 start_time = time.time()
-                predictor.set_image(image)
+                predictor.load_image_embedding(embedding_path)
                 input_point_np = np.array(input_point)
                 input_label_np = np.array(input_label)
 
