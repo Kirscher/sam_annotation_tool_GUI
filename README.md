@@ -1,4 +1,4 @@
-# sam_annotation_tool_GUI
+# sam_annotation_tool_GUI - Decoder Only ONNX Version
 
 Annotation GUI tailored for efficiently annotating large batches of images using the [Segment Anything model from Meta](https://segment-anything.com/). The GUI streamlines the annotation process, allowing users to annotate numerous images in a row seamlessly.
 
@@ -6,7 +6,7 @@ Annotation GUI tailored for efficiently annotating large batches of images using
 
 ## Installation
 
-Before using the SAM Annotation GUI, ensure that the "Segment Anything" model is installed. Follow the installation instructions provided in the official repository: [facebookresearch/segment-anything](https://github.com/facebookresearch/segment-anything).
+Before using this version of the SAM Annotation GUI, ensure that the raw images and their embeddings are stored in the `input` folder. The application expects to find the images and embeddings in this directory. Make sure the embeddings correspond to the raw images and are correctly named.
 
 ### Setting up Virtual Environment and Installing Dependencies
 
@@ -32,10 +32,9 @@ Before using the SAM Annotation GUI, ensure that the "Segment Anything" model is
 
 ## Usage
 
-1. **Prepare Images**: Before running the application, ensure that the raw images and their embeddings are stored in the `input` folder. The application expects to find the images and embeddings in this directory. Make sure the embeddings correspond to the raw images and are correctly named.
-2. **Run the GUI**: In the venv, execute `python sam_GUI.py` to launch the GUI.
-3. **Annotate**: Utilize the annotation tools provided to annotate images efficiently.
-4. **Save Annotations**: Save the annotated images masks for further analysis or model training in the `output/` folder.
+1. **Run the GUI**: In the venv, execute `python sam_GUI.py` to launch the GUI.
+2. **Annotate**: Utilize the annotation tools provided to annotate images efficiently.
+3. **Save Annotations**: Save the annotated images masks in compressed RLE format in `json` files in the `output/` folder.
 
 ### Commands
 
