@@ -32,7 +32,7 @@ Before using the SAM Annotation GUI, ensure that the "Segment Anything" model is
 
 ## Usage
 
-1. **Prepare Images**: Place the images you want to annotate in the `input/` folder within the project directory. 
+1. **Prepare Images**: Before running the application, ensure that the raw images and their embeddings are stored in the `input` folder. The application expects to find the images and embeddings in this directory. Make sure the embeddings correspond to the raw images and are correctly named.
 2. **Run the GUI**: In the venv, execute `python sam_GUI.py` to launch the GUI.
 3. **Annotate**: Utilize the annotation tools provided to annotate images efficiently.
 4. **Save Annotations**: Save the annotated images masks for further analysis or model training in the `output/` folder.
