@@ -1,35 +1,37 @@
-import cv2
-import os
-import json
-import time
-import torch
-import numpy as np
+# Author: T. Kirscher
+# Date: 04/2024
+# Description: This script contains the main GUI for the SAM annotation tool.
 
+import json
+import os
+import time
+from copy import deepcopy
+
+import cv2
+import numpy as np
+import onnxruntime as ort
+import torch
+from PIL import Image
 from pycocotools import mask as mask_utils
-from segment_anything import sam_model_registry, SamPredictor
 
 # Constants
-INPUT_DIR = "input"
-OUTPUT_DIR = "output"
-IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg"]
-EMBEDDING_EXTENSIONS = [".pt"]
+INPUT_DIR = 'input'
+OUTPUT_DIR = 'output'
+IMAGE_EXTENSIONS = ['.png', '.jpg', '.jpeg']
+EMBEDDING_EXTENSIONS = ['.pt']
 POINT_RADIUS = 3
+MASK_COLOR = (255, 0, 0)
+FONT_COLOR = (0, 255, 255)
 
 
 def get_embedding_files(directory):
     """Return a list of embedding filenames in the given directory."""
-    return [
-        f
-        for f in os.listdir(directory)
-        if f.lower().endswith(tuple(EMBEDDING_EXTENSIONS))
-    ]
+    return [f for f in os.listdir(directory) if f.lower().endswith(tuple(EMBEDDING_EXTENSIONS))]
 
 
 def get_image_files(directory):
     """Return a list of image filenames in the given directory."""
-    return [
-        f for f in os.listdir(directory) if f.lower().endswith(tuple(IMAGE_EXTENSIONS))
-    ]
+    return [f for f in os.listdir(directory) if f.lower().endswith(tuple(IMAGE_EXTENSIONS))]
 
 
 # Create the output directory if it does not exist
@@ -41,17 +43,10 @@ image_files = get_image_files(INPUT_DIR)
 # Get the list of embedding files in the input directory
 embedding_files = get_embedding_files(INPUT_DIR)
 
-# Load the model
-print("Loading model...")
-sam = sam_model_registry["vit_b"](checkpoint="sam_vit_b_01ec64.pth")
-
-# Determine the device to run the model on
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print(f"Running on {device}")
-
-# Load the model to the device
-sam = sam.to(device=device)
-predictor = SamPredictor(sam)
+# Load the decoder
+print('Loading decoder...')
+decoder = ort.InferenceSession('src/decoder.onnx')
+print('Decoder loaded.')
 
 
 def mouse_click(event, x, y, flags, param):
@@ -83,7 +78,7 @@ def mouse_click(event, x, y, flags, param):
 
 def apply_mask(image, mask, alpha_channel=True):
     """
-    Applies a mask to an image.
+    Apply a mask to an image.
 
     Args:
         image (numpy.ndarray): The input image.
@@ -105,7 +100,7 @@ def apply_mask(image, mask, alpha_channel=True):
 
 def apply_color_mask(image, mask, color, color_dark=0.5):
     """
-    Applies a color mask to an image.
+    Apply a color mask to an image.
 
     Args:
         image (numpy.ndarray): The input image.
@@ -118,7 +113,7 @@ def apply_color_mask(image, mask, color, color_dark=0.5):
     """
     for c in range(3):
         image[:, :, c] = np.where(
-            mask == 1,
+            mask == 1.0,
             image[:, :, c] * (1 - color_dark) + color_dark * color[c],
             image[:, :, c],
         )
@@ -139,7 +134,7 @@ def get_next_filename(base_path: str, filename: str) -> str:
     name, ext = os.path.splitext(filename)
     i = 1
     while True:
-        new_name = f"{name}_{i}{ext}"
+        new_name = f'{name}_{i}{ext}'
         if not os.path.exists(os.path.join(base_path, new_name)):
             return new_name
         i += 1
@@ -159,12 +154,12 @@ def save_mask(mask, output_dir, filename):
         None
     """
     # Encode the mask in COCO RLE format
-    rle = mask_utils.encode(np.asfortranarray(mask))
+    rle = mask_utils.encode(np.asfortranarray(mask * 255))
     # Convert the RLE mask to a string
-    rle["counts"] = rle["counts"].decode("utf-8")
+    rle['counts'] = rle['counts'].decode('utf-8')
 
     # Save the RLE mask to a JSON file
-    with open(os.path.join(output_dir, filename.rsplit(".", 1)[0] + ".json"), "w") as f:
+    with open(os.path.join(output_dir, filename.rsplit('.', 1)[0] + '.json'), 'w') as f:
         json.dump(rle, f)
 
     print(f"Saved as {filename.rsplit('.', 1)[0]}.json")
@@ -172,34 +167,47 @@ def save_mask(mask, output_dir, filename):
 
 current_index = 0
 
-cv2.namedWindow("SAM - Annotation Tool")
-cv2.setMouseCallback("SAM - Annotation Tool", mouse_click)
+cv2.namedWindow('SAM - Annotation Tool')
+cv2.setMouseCallback('SAM - Annotation Tool', mouse_click)
 input_point = []
 input_label = []
 input_stop = False
 while True:
     filename = image_files[current_index]
-    image_orign = cv2.imread(os.path.join(INPUT_DIR, filename))
-    image = cv2.cvtColor(image_orign.copy(), cv2.COLOR_BGR2RGB)
-    embedding_filename = filename.rsplit(".", 1)[0] + ".pt"
+    image_path = os.path.join(INPUT_DIR, filename)
+    image_orign = cv2.imread(image_path)
+    img = Image.open(image_path)
+    img = img.convert('RGB')
+    orig_width, orig_height = img.size
+    resized_width, resized_height = img.size
+    if orig_width > orig_height:
+        resized_width = 1024
+        resized_height = int(1024 / orig_width * orig_height)
+    else:
+        resized_height = 1024
+        resized_width = int(1024 / orig_height * orig_width)
+    img = img.resize((resized_width, resized_height), Image.Resampling.BILINEAR)
+    embedding_filename = filename.rsplit('.', 1)[0] + '.pt'
     if embedding_filename in embedding_files:
         embedding_path = os.path.join(INPUT_DIR, embedding_filename)
     else:
-        print(f"No embedding found for {filename}, skipping...")
-        continue
+        print(
+            f'Error: No embedding found for {filename}.\nPlease ensure that the embedding file is present in the input directory.\n'
+        )
+        break
     selected_mask = None
     logit_input = None
     while True:
         input_stop = False
         image_display = image_orign.copy()
-        display_info = f"{filename} | s: save | w: predict | d: next image | a: prev. image | space: clear | q: remove last point"
+        display_info = f'{filename} | s: save | w: predict | d: next image | a: prev. image | space: clear | q: remove last point'
         cv2.putText(
             image_display,
             display_info,
             (10, 30),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.5,
-            (0, 255, 255),
+            FONT_COLOR,
             1,
             cv2.LINE_AA,
         )
@@ -207,108 +215,117 @@ while True:
             color = (0, 255, 0) if label == 1 else (0, 0, 255)
             cv2.circle(image_display, tuple(point), POINT_RADIUS, color, -1)
         if selected_mask is not None:
-            color = tuple(np.random.randint(0, 256, 3).tolist())
-            selected_image = apply_color_mask(image_display, selected_mask, color)
+            selected_image = apply_color_mask(image_display, selected_mask, MASK_COLOR)
 
-        cv2.imshow("SAM - Annotation Tool", image_display)
+        cv2.imshow('SAM - Annotation Tool', image_display)
         key = cv2.waitKey(1)
 
-        if key == ord(" "):
+        if key == ord(' '):
             input_point = []
             input_label = []
             selected_mask = None
             logit_input = None
-        elif key == ord("w"):
-            print("Predicting...")
+        elif key == ord('w'):
+            print('Predicting...')
             input_stop = True
             if len(input_point) > 0 and len(input_label) > 0:
-
                 start_time = time.time()
-                predictor.load_image_embedding(embedding_path)
-                input_point_np = np.array(input_point)
-                input_label_np = np.array(input_label)
-
-                masks, scores, logits = predictor.predict(
-                    point_coords=input_point_np,
-                    point_labels=input_label_np,
-                    mask_input=(
-                        logit_input[None, :, :] if logit_input is not None else None
-                    ),
-                    multimask_output=True,
+                onnx_mask_input = np.zeros((1, 1, 256, 256), dtype=np.float32)
+                onnx_has_mask_input = np.zeros(1, dtype=np.float32)
+                embeddings = torch.load(embedding_path)
+                onnx_coord = np.concatenate(
+                    [np.array(input_point), np.array([[0.0, 0.0]])], axis=0
+                )[None, :, :]
+                onnx_label = np.concatenate([np.array(input_label), np.array([-1])])[
+                    None, :
+                ].astype(np.float32)
+                coords = deepcopy(onnx_coord).astype(float)
+                coords[..., 0] = coords[..., 0] * (resized_width / orig_width)
+                coords[..., 1] = coords[..., 1] * (resized_height / orig_height)
+                onnx_coord = coords.astype('float32')
+                outputs = decoder.run(
+                    None,
+                    {
+                        'image_embeddings': embeddings['features'],
+                        'point_coords': onnx_coord,
+                        'point_labels': onnx_label,
+                        'mask_input': onnx_mask_input,
+                        'has_mask_input': onnx_has_mask_input,
+                        'orig_im_size': np.array(embeddings['original_size']).astype(np.float32),
+                    },
                 )
+                masks, scores, logits = outputs
+                masks, scores, logits = masks[0], scores[0], logits[0]
                 end_time = time.time()
-                print(f"Prediction duration: {end_time - start_time} seconds")
-
+                print(f'Prediction duration: {round(end_time - start_time, 3)}s')
                 mask_idx = 0
                 num_masks = len(masks)
                 while 1:
-                    color = tuple(np.random.randint(0, 256, 3).tolist())
+                    color = tuple([0, np.random.randint(200, 256), 0])
                     image_select = image_orign.copy()
-                    selected_mask = masks[mask_idx]
-                    selected_image = apply_color_mask(
-                        image_select, selected_mask, color
-                    )
-                    mask_info = f"Total: {num_masks} | Current: {mask_idx} | Score: {scores[mask_idx]:.2f} | w: confirm | d: next mask | a: prev. mask | q: rm last point | s: save"
+                    selected_mask = (masks[mask_idx] > 0).astype('uint8')
+                    selected_image = apply_color_mask(image_select, selected_mask, color)
+                    mask_info = f'Total: {num_masks} | Current: {mask_idx} | Score: {scores[mask_idx]:.2f} | w: confirm | d: next mask | a: prev. mask | q: rm last point | s: save'
                     cv2.putText(
                         selected_image,
                         mask_info,
                         (10, 30),
                         cv2.FONT_HERSHEY_SIMPLEX,
                         0.5,
-                        (0, 255, 255),
+                        FONT_COLOR,
                         1,
                         cv2.LINE_AA,
                     )
 
-                    cv2.imshow("SAM - Annotation Tool", selected_image)
+                    cv2.imshow('SAM - Annotation Tool', selected_image)
 
                     key = cv2.waitKey(10)
-                    if key == ord("q") and len(input_point) > 0:  # remove last point
+                    if key == ord('q') and len(input_point) > 0:  # remove last point
                         input_point.pop(-1)
                         input_label.pop(-1)
-                    elif key == ord("s"):  # save mask
+                    elif key == ord('s'):  # save mask
                         save_mask(
                             selected_mask,
                             OUTPUT_DIR,
                             filename,
                         )
-                    elif key == ord("a"):  # prev mask
+                    elif key == ord('a'):  # prev mask
                         if mask_idx > 0:
                             mask_idx -= 1
                         else:
                             mask_idx = num_masks - 1
-                    elif key == ord("d"):  # next mask
+                    elif key == ord('d'):  # next mask
                         if mask_idx < num_masks - 1:
                             mask_idx += 1
                         else:
                             mask_idx = 0
-                    elif key == ord("w"):  # confirm
+                    elif key == ord('w'):  # confirm
                         break
-                    elif key == ord(" "):  # clear
+                    elif key == ord(' '):  # clear
                         input_point = []
                         input_label = []
                         selected_mask = None
                         logit_input = None
                         break
                 logit_input = logits[mask_idx, :, :]
-                print("max score:", np.argmax(scores), " select:", mask_idx)
+                print('max score:', np.argmax(scores), ' select:', mask_idx)
 
-        elif key == ord("a"):  # prev image
+        elif key == ord('a'):  # prev image
             current_index = max(0, current_index - 1)
             input_point = []
             input_label = []
             break
-        elif key == ord("d"):  # next image
+        elif key == ord('d'):  # next image
             current_index = min(len(image_files) - 1, current_index + 1)
             input_point = []
             input_label = []
             break
         elif key == 27:  # ESC
             break
-        elif key == ord("q") and len(input_point) > 0:  # remove last point
+        elif key == ord('q') and len(input_point) > 0:  # remove last point
             input_point.pop(-1)
             input_label.pop(-1)
-        elif key == ord("s") and selected_mask is not None:  # save mask
+        elif key == ord('s') and selected_mask is not None:  # save mask
             save_mask(selected_mask, OUTPUT_DIR, filename)
 
     if key == 27:  # ESC
